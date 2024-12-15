@@ -4,63 +4,49 @@ import (
 	"strconv"
 	"syscall"
 	"fmt"
-	"unsafe"
 )
 
-type SDebugger struct{
-	attached bool
-	pid int
+type Debugger struct{
+	threads []*ThreadDebugger
+	ctx_thread int
 }
 
-func newSDebugger() *SDebugger {
-	return &SDebugger{attached: false}
-}
+type dbg_error int
 
-func (state *SDebugger) PGetRegs() string {
-	var regs RegStruct_t
-	r1, r2, err := syscall.Syscall6(syscall.SYS_PTRACE, syscall.PTRACE_GETREGS, 
-	uintptr(state.pid),
-	uintptr(0),
-	uintptr(unsafe.Pointer(&regs)), 0, 0)
-	if err != 0 {
-		return fmt.Sprintf("Err: %d %s", err, err.Error())
+const (
+	DBGERR_CTX_NONEXISTENT dbg_error = 1
+)
+
+func (err dbg_error) Error() string {
+	switch err {
+	case DBGERR_CTX_NONEXISTENT:
+		return "Context dosn't exist"
 	}
-	return fmt.Sprintf("hellooor1: %d, r2: %d, err: %d, RSP: %s", r1, r2, err, regs.RSP())
+	return "Unknwn Error"
 }
 
-func (state *SDebugger) PCont(sig int) string {
-	mypid, _, _ := syscall.Syscall(syscall.SYS_GETPID, 0,0,0)
-	r1, r2, err := syscall.Syscall6(syscall.SYS_PTRACE, syscall.PTRACE_CONT, 
-	uintptr(state.pid),
-	uintptr(0),
-	uintptr(sig), 0, 0)
-	if err != 0 {
-		return fmt.Sprintf("mypid: %d\nErr: %d %s", mypid, err, err.Error())
+// HELPERS
+func newDebugger() *Debugger {
+	return &Debugger{threads: make([]*ThreadDebugger, 0, 1), ctx_thread: -1}
+}
+
+func (dbg *Debugger) CtxThread() *ThreadDebugger {
+	if dbg.ctx_thread == -1 {
+		return nil
 	}
-	return fmt.Sprintf("mypid: %d\nr1: %d, r2: %d, err: %d", mypid, r1, r2, err)
+	return dbg.threads[dbg.ctx_thread]
 }
 
-func (state *SDebugger) PDetach() string {
-	r1, r2, err := syscall.Syscall6(syscall.SYS_PTRACE, syscall.PTRACE_DETACH, 0,0,0,0,0)
-	if err != 0 {
-		return fmt.Sprintf("Err: %d %s", err, err.Error())
+func (dbg *Debugger) CtxSwitch(new_ctx int) (error) {
+	if new_ctx >= len(dbg.threads)  || new_ctx < 0 {
+		return DBGERR_CTX_NONEXISTENT
 	}
-	state.attached = false
-	return "Detached succesfully" + "\n" + fmt.Sprintf("r1: %d, r2: %d, err: %d", r1, r2, err)
+	dbg.ctx_thread = new_ctx
+	return nil
 }
 
-func (state *SDebugger) PPeek(addr int) string {
-	r1, r2, err := syscall.Syscall6(syscall.SYS_PTRACE, syscall.PTRACE_PEEKDATA, 
-	uintptr(state.pid),
-	uintptr(addr),
-	uintptr(0), 0, 0)
-	if err != 0 {
-		return fmt.Sprintf("Err: %d %s", err, err.Error())
-	}
-	return fmt.Sprintf("r1: %d, r2: %d, err: %d", r1, r2, err)
-}
-
-func (state *SDebugger) PWait(pid int, hang bool) string {
+// for testing
+func (dbg *Debugger) Wait(pid int, hang bool) string {
 	var wstatus syscall.WaitStatus
 	rusage := syscall.Rusage{}
 	opt := syscall.WNOHANG
@@ -87,33 +73,17 @@ func (state *SDebugger) PWait(pid int, hang bool) string {
 	return fmt.Sprintf("pid: %d \nwstatus: %X, sig: %s", wpid,  wstatus, signal)
 }
 
-func (state *SDebugger) PGetSigInfo(pid int) string {
-	var siginfo SigInfo_t
-	var out string
-	r1, r2, err := syscall.Syscall6(syscall.SYS_PTRACE, syscall.PTRACE_GETSIGINFO, 
-	uintptr(pid), 
-	uintptr(unsafe.Pointer(&siginfo)), 
-	uintptr(0), 0, 0)
-	if err != 0 {
-		return fmt.Sprintf("Err: %d %s", err, err.Error())
-	}
 
-	out += fmt.Sprintf("signo: %d\n", siginfo.Signum())
-	return fmt.Sprintf("r1: %d, r2: %d, err: %d\n", r1, r2, err)
+func (dbg *Debugger) Attach(pid int) error {
+	tdb, err:= NewThreadDebuggerAttach(pid)
+	if err == nil {
+		dbg.threads = append(dbg.threads, tdb)
+		dbg.ctx_thread = len(dbg.threads) - 1
+	}
+	return err 
 }
 
-func (state *SDebugger) PAttach(pid int) string {
-	_, _, err := syscall.Syscall6(syscall.SYS_PTRACE, syscall.PTRACE_ATTACH, uintptr(pid), uintptr(0), uintptr(0), 0, 0)
-	if err != 0 {
-		return fmt.Sprintf("Err: %d %s", err, err.Error())
-	}
-	state.attached = true
-	state.pid = pid
-	out := "Attached"
-	return out 
-}
-
-func (state *SDebugger) GetUID() string {
+func (state *Debugger) GetUID() string {
 	uid := syscall.Getuid()
 	return strconv.Itoa(uid)
 }
