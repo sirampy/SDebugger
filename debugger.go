@@ -14,7 +14,8 @@ type Debugger struct{
 type dbg_error int
 
 const (
-	DBGERR_CTX_NONEXISTENT dbg_error = 1
+	DBGERR dbg_error = 1 		// general error
+	DBGERR_CTX_NONEXISTENT
 )
 
 func (err dbg_error) Error() string {

@@ -11,18 +11,26 @@ import (
 )
 
 // REPL FUNCTIONALITY
-const replHelpMsg = `quit | q 		 	exit SDebug
-help | h 			display this help message
+const replHelpMsg = `quit | q 		 		exit dbg
+help | h 				display this help message
 
-ctx CTX				switch to debugging thread of ontext CTX
+ctx CTX					switch to debugging thread of ontext CTX
 
-attach PID 			trace process PID
-detach 				detach from tracee
-wait 				listen for signal from tracee
-getsiginfo 			get info on signal from tracee
-pid					PID of tracee
+CONTROL FLOW:
+attach PID 				trace process PID
+detach 					detach from tracee
+interrupt | int			interrupt tracee
+continue | cont | c		continue tracee
+step | s				continue one instruction
+pid						PID of tracee
 
-dbgprint 			print Debugger struct`
+PEEK TRACEE:
+regdump					get register values
+getsiginfo 				get info on signal from tracee
+
+DEBUG COMMANDS:
+wait 					listen for signal from tracee
+dbgprint 				print Debugger struct`
 
 // REPL HANDLER
 type ReplHandler struct {
@@ -32,7 +40,10 @@ type ReplHandler struct {
 
 // REPL HANDLER INTERFACE IMPLEMENTATION
 func (h *ReplHandler) Prompt() string {
-	return "> "
+	if h.dbg.ctx_thread == -1 {
+		return "> "
+	}
+	return fmt.Sprintf("%d> ", h.dbg.ctx_thread)
 }
 
 func (h *ReplHandler) Tab(buff string) string {
@@ -69,6 +80,13 @@ func (h *ReplHandler) Eval(buff string) string {
 			return err2.Error()
 		}
 		return "Success"
+	
+	case "pid":
+		t := h.dbg.CtxThread()
+		if t == nil {
+			return "No tracee attached"
+		}
+		return fmt.Sprintf("PID: %d", t.pid)
 
 	case "attach":
 		if len(args) != 1 {
@@ -84,6 +102,40 @@ func (h *ReplHandler) Eval(buff string) string {
 		}
 		return "Attached"
 
+	case "step", "s":
+		t := h.dbg.CtxThread()
+		if t == nil {
+			return "Not in a thread context"
+		}
+		err := t.Step()
+		if err != 0 {
+			return err.Error()
+		}
+		return "Steping"
+	
+	case "continue", "cont", "c":
+		t := h.dbg.CtxThread()
+		if t == nil {
+			return "Not in a thread context"
+		}
+		err := t.Cont()
+		if err != 0 {
+			return err.Error()
+		}
+		return "Continuing"
+
+	case "interrupt", "int":
+		t := h.dbg.CtxThread()
+		if t == nil {
+			return "Not in a thread context"
+		}
+		err := t.Int()
+		if err != nil {
+			return err.Error()
+		}
+		return "Interrupted"
+		
+
 	case "regdump":
 		t := h.dbg.CtxThread()
 		if t == nil {
@@ -95,16 +147,11 @@ func (h *ReplHandler) Eval(buff string) string {
 		}
 		return fmt.Sprintf("%+v",t.regs)
 
+
 	/*
 	case "detach":
 		if h.sdb.attached {
 			return h.sdb.PDetach()
-		}
-		return "No tracee attached"
-
-	case "continue", "cont", "c":
-		if h.sdb.attached {
-			return h.sdb.PCont(0)
 		}
 		return "No tracee attached"
 		
@@ -118,12 +165,6 @@ func (h *ReplHandler) Eval(buff string) string {
 		}
 		return h.sdb.PPeek(arg1)
 	
-	case "pid":
-		if h.sdb.attached {
-			return strconv.Itoa(h.sdb.pid)
-		}
-		return "not currently attached"
-
 
 	case "getsiginfo":
 		if h.sdb.attached {
