@@ -106,6 +106,16 @@ func (h *ReplHandler) Eval(buff string) string {
 		}
 		return "Attached"
 
+	case "trace":
+		if len(args) == 0 {
+			return "trace expects a program to execute"
+		}
+		err := h.dbg.Execve(&args)
+		if err != nil {
+			return err.Error()
+		}
+		return "Attached"
+
 	case "detach":
 		t := h.dbg.CtxThread()
 		if t == nil {
@@ -124,15 +134,6 @@ func (h *ReplHandler) Eval(buff string) string {
 		t := h.dbg.CtxThread()
 		if t == nil {
 			return "Not in a thread context"
-		}
-		ndel, e := h.dbg.UpdateCurrentThreadState()
-		if e != nil {
-			return e.Error()
-		} else if !ndel {
-			return delMsg
-		}
-		if t.state != PSTOPPED {
-			return stateMsg + "PSTOPPED"
 		}
 
 		err := t.Step()

@@ -97,7 +97,16 @@ func (dbg *Debugger) Wait(pid int, hang bool) string {
 
 
 func (dbg *Debugger) Attach(pid int) error {
-	tdb, err:= NewThreadDebuggerAttach(pid)
+	tdb, err := NewThreadDebuggerAttach(pid)
+	if err == nil {
+		dbg.threads = append(dbg.threads, tdb)
+		dbg.ctx_thread = len(dbg.threads) - 1
+	}
+	return err 
+}
+
+func (dbg *Debugger) Execve(cmd *[]string) error {
+	tdb, err := NewThreadDebuggerExecve((*cmd)[0], cmd, nil)
 	if err == nil {
 		dbg.threads = append(dbg.threads, tdb)
 		dbg.ctx_thread = len(dbg.threads) - 1

@@ -1,7 +1,7 @@
 # basic singlethread debugging / internals
 - [x] setup repl
 - [x] attach by pid
-- [ ] attach by execve
+- [x] attach by execve ( not fully tested )
 - [ ] detach / term tracee
 - [x] setp exec
 - [ ] setp syscall exec ( strech - verry easy )
