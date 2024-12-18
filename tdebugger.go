@@ -72,6 +72,8 @@ func NewThreadDebuggerExecve(path string, argv *[]string, envv *[]string) (*Thre
 		tdb := NewThreadDebugger(rpid)
 		//TODO: setp past execve
 		tdb.UpdateStateFromWait(wstatus)
+		//TODO: update with propper option system
+		tdb.setOptions(syscall.PTRACE_O_TRACEEXEC)
 		return tdb, nil
 	}
 	return nil, DBGERR
@@ -153,6 +155,14 @@ func (tdb *ThreadDebugger) UpdateStateFromWait(wstatus syscall.WaitStatus) (bool
 }
 
 // DEBUG COMMANDS
+func (tdb *ThreadDebugger) setOptions(options int) (error) {
+	_, _, err := syscall.Syscall6(syscall.SYS_PTRACE, syscall.PTRACE_SETOPTIONS, uintptr(tdb.pid),0,0,0,0)
+	if err != 0 {
+		return err
+	}
+	return nil
+}
+
 func (tdb *ThreadDebugger) Detach() (syscall.Errno, error) {
 	ok, syserr := tdb.stateGuard(PSTOPPED)
 	if !ok {
@@ -169,6 +179,22 @@ func (tdb *ThreadDebugger) Detach() (syscall.Errno, error) {
 	}
 	tdb.state = DETACHED
 	return 0, nil
+}
+
+func (tdb *ThreadDebugger) Kill() error {
+	ok, syserr := tdb.stateGuard(PSTOPPED, RUNNING)
+	if !ok {
+		if syserr != nil {
+			return syserr
+		}
+		myerr := DBGERR_STATE_NOT_SUPPORTED
+		return &myerr
+	}
+	err := syscall.Kill(tdb.pid, syscall.SIGKILL)
+	if	err ==  nil {
+		tdb.state = PSTOPPED
+	}
+	return err
 }
 
 func (tdb *ThreadDebugger) Step() (error) {
@@ -226,7 +252,9 @@ func (tdb *ThreadDebugger) Int() (error) {
 
 	// have to use kill as PTRACE_INTERRUPT isnt suported on my hardware - could do feature check as PTRACE_INTERRUPT is better (interrupts through syscalls)
 	err = syscall.Kill(tdb.pid, syscall.SIGCHLD)
-	tdb.state = PSTOPPED
+	if	err ==  nil {
+		tdb.state = PSTOPPED
+	}
 	return err
 }
 

@@ -43,11 +43,17 @@ type ReplHandler struct {
 }
 
 // REPL HANDLER INTERFACE IMPLEMENTATION
+//NOTE: state hints are hints and only hints, as states are checked at command execute time
 func (h *ReplHandler) Prompt() string {
-	if h.dbg.ctx_thread == -1 {
+	t := h.dbg.CtxThread()
+	if t == nil {
 		return "> "
 	}
-	return fmt.Sprintf("%d> ", h.dbg.ctx_thread)
+	statesymbol := "> "
+	if t.state == PSTOPPED {
+		statesymbol = ": "
+	}
+	return strconv.Itoa(h.dbg.ctx_thread) + statesymbol
 }
 
 func (h *ReplHandler) Tab(buff string) string {
@@ -129,6 +135,19 @@ func (h *ReplHandler) Eval(buff string) string {
 			return interr.Error()
 		}
 		return "Detached"
+
+	case "kill":
+		t := h.dbg.CtxThread()
+		if t == nil {
+			return stateMsg
+		}
+		
+		 err := t.Kill()
+		 if err != nil {
+			 return err.Error()
+		 }
+		 return "Process Killed"
+
 
 	case "step", "s":
 		t := h.dbg.CtxThread()

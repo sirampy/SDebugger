@@ -2,7 +2,7 @@
 - [x] setup repl
 - [x] attach by pid
 - [x] attach by execve ( not fully tested )
-- [ ] detach / term tracee
+- [x] detach / term tracee
 - [x] setp exec
 - [ ] setp syscall exec ( strech - verry easy )
 - [x] int / cont exec 
@@ -27,7 +27,7 @@
 
 # config
 - [ ] read config file ( strech )
-- [ ] set ptrace options
+- [ ] set ptrace options ( strech - i need option setting regardless, but a full option system inst that important )
 
 # debuginfo usage ( strech )
 - [ ] source code instruction referencing
