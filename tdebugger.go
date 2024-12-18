@@ -7,11 +7,25 @@ import (
 
 type tstate_t int
 const (
-	DETACHED tstate_t = 0
+	DETACHED tstate_t = iota
 	TERMINATED 
 	PSTOPPED 
 	RUNNING 
 )
+
+func (state tstate_t) String() string {
+	switch state {
+	case DETACHED:
+		return "DETACHED"
+	case TERMINATED:
+		return "TERMINATED"
+	case PSTOPPED:
+		return "PSTOPPED"
+	case RUNNING:
+		return "RUNNING"
+	}
+	return ""
+}
 
 type ThreadDebugger struct {
 	pid int
@@ -84,16 +98,33 @@ func NewThreadDebuggerAttach(pid int) (*ThreadDebugger, error) {
 	
 	return tdb, nil
 }
+// GUARDS
+func (tdb *ThreadDebugger) stateGuard(states ...tstate_t) (bool, error) {
+	_, err := tdb.UpdateState()
+	if err != nil {
+		return false, err
+	}
+	for _, state := range states {
+		if tdb.state == state {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+
 // HELPERS
 
 func (tdb *ThreadDebugger) UpdateState() (bool, error) {
 	var wstatus syscall.WaitStatus
-	r, err := syscall.Wait4(tdb.pid, &wstatus, syscall.WNOHANG, nil)
+	var newwstatus syscall.WaitStatus
+	r, err := syscall.Wait4(tdb.pid, &newwstatus, syscall.WNOHANG, nil)
 	if r == 0 {
 		return true, nil
 	}
 	for r == tdb.pid {
-		r, err = syscall.Wait4(tdb.pid, &wstatus, syscall.WNOHANG, nil)
+		wstatus = newwstatus
+		r, err = syscall.Wait4(tdb.pid, &newwstatus, syscall.WNOHANG, nil)
 	}
 	if err != nil {
 		return true, err
@@ -114,6 +145,7 @@ func (tdb *ThreadDebugger) UpdateStateFromWait(wstatus syscall.WaitStatus) (bool
 		*/
 		tdb.state = PSTOPPED
 	}else if wstatus.Exited() {
+
 		tdb.state = TERMINATED
 		return false
 	} 
@@ -121,67 +153,144 @@ func (tdb *ThreadDebugger) UpdateStateFromWait(wstatus syscall.WaitStatus) (bool
 }
 
 // DEBUG COMMANDS
-func (tdb *ThreadDebugger) Detach() (error) {
-	_, _, err := syscall.Syscall6(syscall.SYS_PTRACE, syscall.PTRACE_DETACH, uintptr(tdb.pid),0,0,0,0)
-	if err == 0 {
-		tdb.state = DETACHED
+func (tdb *ThreadDebugger) Detach() (syscall.Errno, error) {
+	ok, syserr := tdb.stateGuard(PSTOPPED)
+	if !ok {
+		if syserr != nil {
+			return 0, syserr
+		}
+		myerr := DBGERR_STATE_NOT_SUPPORTED
+		return 0, &myerr
 	}
-	return err
+
+	_, _, err := syscall.Syscall6(syscall.SYS_PTRACE, syscall.PTRACE_DETACH, uintptr(tdb.pid),0,0,0,0)
+	if err != 0 {
+		return err, nil
+	}
+	tdb.state = DETACHED
+	return 0, nil
 }
 
-func (tdb *ThreadDebugger) Step() (syscall.Errno) {
-	_, _, err := syscall.Syscall6(syscall.SYS_PTRACE, syscall.PTRACE_SINGLESTEP, 
+func (tdb *ThreadDebugger) Step() (error) {
+	ok, err := tdb.stateGuard(PSTOPPED)
+	if !ok {
+		if err != nil {
+			return err
+		}
+		myerr := DBGERR_STATE_NOT_SUPPORTED
+		return &myerr
+	}
+
+	_, _, errno := syscall.Syscall6(syscall.SYS_PTRACE, syscall.PTRACE_SINGLESTEP, 
 	uintptr(tdb.pid),
 	uintptr(0),
 	uintptr(0), 
 	0, 0)
-	return err
+	if errno == 0 {
+		return nil
+	}
+	return &errno
 }
 
-func (tdb *ThreadDebugger) Cont() (syscall.Errno) {
-	_, _, err := syscall.Syscall6(syscall.SYS_PTRACE, syscall.PTRACE_CONT, 
+func (tdb *ThreadDebugger) Cont() (error) {
+	ok, err := tdb.stateGuard(PSTOPPED)
+	if !ok {
+		if err != nil {
+			return err
+		}
+		myerr := DBGERR_STATE_NOT_SUPPORTED
+		return &myerr
+	}
+
+	_, _, errno := syscall.Syscall6(syscall.SYS_PTRACE, syscall.PTRACE_CONT, 
 	uintptr(tdb.pid),
 	uintptr(0),
 	uintptr(0), // signal
 	0, 0)
-	return err
+	if errno == 0 {
+		tdb.state = RUNNING
+		return nil
+	}
+	return &errno
 }
 
 func (tdb *ThreadDebugger) Int() (error) {
-	err := syscall.Kill(tdb.pid, syscall.SIGCHLD)
+	ok, err := tdb.stateGuard(RUNNING)
+	if !ok {
+		if err != nil {
+			return err
+		}
+		myerr := DBGERR_STATE_NOT_SUPPORTED
+		return &myerr
+	}
+
+	// have to use kill as PTRACE_INTERRUPT isnt suported on my hardware - could do feature check as PTRACE_INTERRUPT is better (interrupts through syscalls)
+	err = syscall.Kill(tdb.pid, syscall.SIGCHLD)
+	tdb.state = PSTOPPED
 	return err
 }
 
-func (tdb *ThreadDebugger) GetRegs() (syscall.Errno) {
-	_, _, err := syscall.Syscall6(syscall.SYS_PTRACE, syscall.PTRACE_GETREGS, 
+func (tdb *ThreadDebugger) GetRegs() (error) {
+	ok, err := tdb.stateGuard(PSTOPPED)
+	if !ok {
+		if err != nil {
+			return err
+		}
+		myerr := DBGERR_STATE_NOT_SUPPORTED
+		return &myerr
+	}
+
+	_, _, errno := syscall.Syscall6(syscall.SYS_PTRACE, syscall.PTRACE_GETREGS, 
 		uintptr(tdb.pid), 
 		uintptr(0),
 		uintptr(unsafe.Pointer(&tdb.regs)), 
 		0, 0)
-	if err == 0 {
+	if errno == 0 {
 		tdb.regs_valid = true
+		return nil
 	}
-	return err
+	return errno
 }
 
 // its probably easier to use /proc/pid/mem
 func (tdb *ThreadDebugger) Peek(addr int) (int, error) {
-	r1, _, err := syscall.Syscall6(syscall.SYS_PTRACE, syscall.PTRACE_PEEKDATA, 
+	ok, err := tdb.stateGuard(PSTOPPED)
+	if !ok {
+		if err != nil {
+			return 0, err
+		}
+		myerr := DBGERR_STATE_NOT_SUPPORTED
+		return 0, &myerr
+	}
+
+	r1, _, errno := syscall.Syscall6(syscall.SYS_PTRACE, syscall.PTRACE_PEEKDATA, 
 	uintptr(tdb.pid),
 	uintptr(addr),
 	uintptr(0), 0, 0)
-	return int(r1), err
+	if errno  == 0{
+		return int(r1), nil
+	}
+	return 0, err
 }
 
 func (tdb *ThreadDebugger) GetSigInfo() (error) {
-	_, _, err := syscall.Syscall6(syscall.SYS_PTRACE, syscall.PTRACE_GETSIGINFO, 
+	ok, err := tdb.stateGuard(PSTOPPED)
+	if !ok {
+		if err != nil {
+			return err
+		}
+		myerr := DBGERR_STATE_NOT_SUPPORTED
+		return &myerr
+	}
+
+	_, _, errno := syscall.Syscall6(syscall.SYS_PTRACE, syscall.PTRACE_GETSIGINFO, 
 		uintptr(tdb.pid), 
 		uintptr(unsafe.Pointer(&tdb.siginfo)), 
 		uintptr(0), 
 		0, 0)
-	if err != 0 {
-		return err
+	if errno ==  0 {
+		tdb.siginfo_valid = true
+		return nil
 	}
-	tdb.siginfo_valid = true
-	return err
+	return errno
 }

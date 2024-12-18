@@ -8,20 +8,25 @@ import (
 
 type Debugger struct{
 	threads []*ThreadDebugger
-	ctx_thread int
+	ctx_thread int // context::thread - may break out into more complex ctx struct down the line
 }
 
 type dbg_error int
 
 const (
-	DBGERR dbg_error = 1 		// general error
+	DBGERR dbg_error = iota + 1 		// general error
 	DBGERR_CTX_NONEXISTENT
+	DBGERR_STATE_NOT_SUPPORTED
 )
 
 func (err dbg_error) Error() string {
 	switch err {
+	case DBGERR:
+		return "Failed"
 	case DBGERR_CTX_NONEXISTENT:
 		return "Context dosn't exist"
+	case DBGERR_STATE_NOT_SUPPORTED:
+		return "Invalid tracee state for opperation"
 	}
 	return "Unknwn Error"
 }
@@ -36,6 +41,22 @@ func (dbg *Debugger) CtxThread() *ThreadDebugger {
 		return nil
 	}
 	return dbg.threads[dbg.ctx_thread]
+}
+
+func (dbg *Debugger) deleteThread(ctx_thread int) {
+	dbg.threads = append(dbg.threads[:ctx_thread], dbg.threads[ctx_thread+1:]...)
+}
+
+//TODO: unusued
+func (dbg *Debugger) UpdateCurrentThreadState() (/* deleted */ bool, error){
+	del, err := dbg.CtxThread().UpdateState()
+	if err != nil {
+		return del, err
+	} else if del {
+		dbg.deleteThread(dbg.ctx_thread)
+		dbg.ctx_thread = -1
+	}
+	return del, nil
 }
 
 func (dbg *Debugger) CtxSwitch(new_ctx int) (error) {
@@ -61,7 +82,7 @@ func (dbg *Debugger) Wait(pid int, hang bool) string {
 	}
 
 	if wpid == 0 {
-		return fmt.Sprintf("%d, nothing to wait on", pid)
+		return fmt.Sprintf("%d, nothing to wait on", wpid)
 	}
 	signal := strconv.Itoa(int(wstatus))
 	if wstatus.Exited(){

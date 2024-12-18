@@ -31,6 +31,10 @@ getsiginfo 				get info on signal from tracee
 DEBUG COMMANDS:
 wait 					listen for signal from tracee
 dbgprint 				print Debugger struct`
+const delMsg = `FAILED: Thread terminated`
+const ctxMsg = `FAILED: Not in a thread context`
+const stateMsg = "FAILED: required tracee state "
+const invStateMsg = "FAILED: not supported for state "
 
 // REPL HANDLER
 type ReplHandler struct {
@@ -102,13 +106,37 @@ func (h *ReplHandler) Eval(buff string) string {
 		}
 		return "Attached"
 
+	case "detach":
+		t := h.dbg.CtxThread()
+		if t == nil {
+			return stateMsg
+		}
+		
+		interr, syserr := t.Detach()
+		if syserr != nil {
+			return syserr.Error()
+		} else if interr != 0 {
+			return interr.Error()
+		}
+		return "Detached"
+
 	case "step", "s":
 		t := h.dbg.CtxThread()
 		if t == nil {
 			return "Not in a thread context"
 		}
+		ndel, e := h.dbg.UpdateCurrentThreadState()
+		if e != nil {
+			return e.Error()
+		} else if !ndel {
+			return delMsg
+		}
+		if t.state != PSTOPPED {
+			return stateMsg + "PSTOPPED"
+		}
+
 		err := t.Step()
-		if err != 0 {
+		if err != nil {
 			return err.Error()
 		}
 		return "Steping"
@@ -119,7 +147,7 @@ func (h *ReplHandler) Eval(buff string) string {
 			return "Not in a thread context"
 		}
 		err := t.Cont()
-		if err != 0 {
+		if err != nil {
 			return err.Error()
 		}
 		return "Continuing"
@@ -142,18 +170,13 @@ func (h *ReplHandler) Eval(buff string) string {
 			return "Not in a thread context"
 		}
 		err := t.GetRegs()
-		if err != 0 {
+		if err != nil {
 			return err.Error()
 		}
 		return fmt.Sprintf("%+v",t.regs)
 
 
 	/*
-	case "detach":
-		if h.sdb.attached {
-			return h.sdb.PDetach()
-		}
-		return "No tracee attached"
 		
 	case "peek":
 		if len(args) != 1 {

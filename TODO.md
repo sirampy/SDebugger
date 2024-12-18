@@ -2,10 +2,10 @@
 - [x] setup repl
 - [x] attach by pid
 - [ ] attach by execve
-- [ ] attach / term tracee
+- [ ] detach / term tracee
 - [x] setp exec
-- [ ] setp syscall exec
-- [x] int / cont exec ( TODO: use PTRACE_INTERRUPT instead of kill - wakes out of kernal space )
+- [ ] setp syscall exec ( strech - verry easy )
+- [x] int / cont exec 
 - [x] get registers
 - [ ] peek data
 - [ ] poke data
