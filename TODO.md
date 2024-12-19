@@ -1,25 +1,25 @@
 # basic singlethread debugging / internals
-- [x] setup repl
 - [x] attach by pid
-- [x] attach by execve ( not fully tested )
-- [x] detach / term tracee
+- [x] attach by execve 
+- [x] detach / kill tracee
 - [x] setp exec
-- [ ] setp syscall exec ( strech - verry easy )
+- [x] setp syscall exec ( strech - verry easy )
 - [x] int / cont exec 
 - [x] get registers
-- [ ] peek data
-- [ ] poke data
-- [ ] poke regs
+- [x] peek data
+- [x] poke data ( not fully tested )
+- [x] poke regs
 - [ ] peek / poke other registers ( strech - i suspect regset NT_foo can do some realy cool stuff like get taskstruct or perf regs )
 
 # multithread / state handling
-- [ ] pre-command state checks
+- [x] pre-command state checks
 - [ ] wait all / thread status commands
 - [ ] better ThreadDebugger container ( strech )
-- [ ] async wait
+- [ ] async wait ( strech - requires rewriting repl )
 - [ ] connect all ( strech ) 
 - [ ] fork / execve ...etc following ( strech )
 - [ ] feat. exploration ( strech )
+- [ ] cleanup on exit ( kill execve'd threads )
 
 # breakpoints
 - [ ] software breakpoints
@@ -27,22 +27,24 @@
 
 # config
 - [ ] read config file ( strech )
-- [ ] set ptrace options ( strech - i need option setting regardless, but a full option system inst that important )
+- [ ] set ptrace options ( strech - i need option setting regardless, but by this i really mean a full blown option system )
 
 # debuginfo usage ( strech )
 - [ ] source code instruction referencing
 - [ ] source code variable referencing
+- [ ] advanced peeking / poking
 - [ ] source code injection ( quite advanced, but verry cool - uses temporary executable memory )
 - [ ] feat exploration
 
 # interception / jailing ( strech )
 - [ ] signal interception (siginfo)
 - [ ] sigmask
-- [ ] syscall interception
+- [ ] syscall interception (syscall stop states)
 
-# code quality
+# quality of life / maintainability ( strech )
 - [ ] split packages / create and document module ( strech - this is just boring code quality refactoring, but I do feel like I have implemented a usable debuging library )
-- [ ] verify correctness / testing EG: verify that using the i386 user.h works correctly ( strech )
+- [ ] verify correctness / testing EG: verify that using the i386 user.h works correctly 
+- [ ] linux capabilities ( aka give CAP_SYS_PTRACE )
 
 # feaure exploration ( strech )
 - [ ] berkly packet filters

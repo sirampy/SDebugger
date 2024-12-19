@@ -6,6 +6,7 @@ import (
 	"strings"
 	"strconv"
 	"syscall"
+	"reflect"
 
 	repl "github.com/openengineer/go-repl"
 )
@@ -18,15 +19,19 @@ ctx CTX					switch to debugging thread of ontext CTX
 
 CONTROL FLOW:
 attach PID 				trace process PID
+trace PROGRAM ARGS		execute and trace PROGRAM
 detach 					detach from tracee
+kill					kill child process
+
 interrupt | int			interrupt tracee
 continue | cont | c		continue tracee
 step | s				continue one instruction
+stepsc | ssc			continue until next syscall
 pid						PID of tracee
 
 PEEK TRACEE:
-regdump					get register values
-getsiginfo 				get info on signal from tracee
+regdump | reg			get register values
+peek ADDR				get data stored in ADDR 
 
 DEBUG COMMANDS:
 wait 					listen for signal from tracee
@@ -155,6 +160,18 @@ func (h *ReplHandler) Eval(buff string) string {
 			return "Not in a thread context"
 		}
 
+		err := t.StepSyscall()
+		if err != nil {
+			return err.Error()
+		}
+		return "Steping"
+
+	case "stepsc", "ssc":
+		t := h.dbg.CtxThread()
+		if t == nil {
+			return "Not in a thread context"
+		}
+
 		err := t.Step()
 		if err != nil {
 			return err.Error()
@@ -184,7 +201,7 @@ func (h *ReplHandler) Eval(buff string) string {
 		return "Interrupted"
 		
 
-	case "regdump":
+	case "regdump", "reg":
 		t := h.dbg.CtxThread()
 		if t == nil {
 			return "Not in a thread context"
@@ -194,9 +211,6 @@ func (h *ReplHandler) Eval(buff string) string {
 			return err.Error()
 		}
 		return fmt.Sprintf("%+v",t.regs)
-
-
-	/*
 		
 	case "peek":
 		if len(args) != 1 {
@@ -206,15 +220,67 @@ func (h *ReplHandler) Eval(buff string) string {
 		if err != nil {
 			return "Failed to convert arg1 into an int"
 		}
-		return h.sdb.PPeek(arg1)
-	
-
-	case "getsiginfo":
-		if h.sdb.attached {
-			return h.sdb.PGetSigInfo(h.sdb.pid)
+		t := h.dbg.CtxThread()
+		if t == nil {
+			return "Not in a thread context"
 		}
-		return "not currently attached"
-	*/
+		data, err2 := t.Peek(arg1)
+		if err2 != nil {
+			return err2.Error()
+		}
+		return fmt.Sprintf("Data: 0x%X", data)
+	
+	case "poke":
+		if len(args) != 2 {
+			return "poke expects 2 argument"
+		}
+		arg1, err := strconv.Atoi(args[0])
+		if err != nil {
+			return "Failed to convert arg1 into an int"
+		}
+		arg2, err := strconv.Atoi(args[1])
+		if err != nil {
+			return "Failed to convert arg2 into an int"
+		}
+		t := h.dbg.CtxThread()
+		if t == nil {
+			return "Not in a thread context"
+		}
+		err2 := t.Poke(arg1, arg2)
+		if err2 != nil {
+			return err2.Error()
+		}
+		return "Write successful"
+
+	case "pokereg", "preg" :
+		if len(args) != 2 {
+			return "poke expects 2 argument"
+		}
+		t := h.dbg.CtxThread()
+		if t == nil {
+			return "Not in a thread context"
+		}
+		err := t.GetRegs()
+		if err != nil {
+			return err.Error()
+		}
+
+		_, valid := reflect.TypeOf(t.regs).FieldByName(args[0])
+		if !valid {
+			return "Invalid register name"
+		}
+		arg2, err2 := strconv.Atoi(args[1])
+		if err2 != nil {
+			return "Failed to convert arg2 into an int"
+		}
+		
+		t.regs.SetByName(args[0], arg2)
+		fmt.Printf("%+v",t.regs)
+		err3 := t.SetRegs(&t.regs)
+		if err3 != nil {
+			return err3.Error()
+		}
+		return "Write successful"
 
 	// FOR TESTING
 

@@ -218,6 +218,26 @@ func (tdb *ThreadDebugger) Step() (error) {
 	return &errno
 }
 
+func (tdb *ThreadDebugger) StepSyscall() (error) {
+	ok, err := tdb.stateGuard(PSTOPPED)
+	if !ok {
+		if err != nil {
+			return err
+		}
+		myerr := DBGERR_STATE_NOT_SUPPORTED
+		return &myerr
+	}
+
+	_, _, errno := syscall.Syscall6(syscall.SYS_PTRACE, syscall.PTRACE_SYSCALL, 
+	uintptr(tdb.pid),
+	uintptr(0),
+	uintptr(0), 
+	0, 0)
+	if errno == 0 {
+		return nil
+	}
+	return &errno
+}
 func (tdb *ThreadDebugger) Cont() (error) {
 	ok, err := tdb.stateGuard(PSTOPPED)
 	if !ok {
@@ -280,8 +300,33 @@ func (tdb *ThreadDebugger) GetRegs() (error) {
 	return errno
 }
 
+func (tdb *ThreadDebugger) SetRegs(newregs *RegStruct_t) (error) {
+	ok, err := tdb.stateGuard(PSTOPPED)
+	if !ok {
+		if err != nil {
+			return err
+		}
+		myerr := DBGERR_STATE_NOT_SUPPORTED
+		return &myerr
+	}
+	if newregs == nil {
+		return DBGERR
+	}
+
+	_, _, errno := syscall.Syscall6(syscall.SYS_PTRACE, syscall.PTRACE_SETREGS, 
+		uintptr(tdb.pid), 
+		uintptr(0),
+		uintptr(unsafe.Pointer(newregs)), 
+		0, 0)
+	if errno == 0 {
+		tdb.regs_valid = true
+		return nil
+	}
+	return errno
+}
+
 // its probably easier to use /proc/pid/mem
-func (tdb *ThreadDebugger) Peek(addr int) (int, error) {
+func (tdb *ThreadDebugger) Peek(addr int) (uint, error) {
 	ok, err := tdb.stateGuard(PSTOPPED)
 	if !ok {
 		if err != nil {
@@ -291,14 +336,37 @@ func (tdb *ThreadDebugger) Peek(addr int) (int, error) {
 		return 0, &myerr
 	}
 
-	r1, _, errno := syscall.Syscall6(syscall.SYS_PTRACE, syscall.PTRACE_PEEKDATA, 
+	var data uint
+	_, _, errno := syscall.Syscall6(syscall.SYS_PTRACE, syscall.PTRACE_PEEKTEXT, 
 	uintptr(tdb.pid),
 	uintptr(addr),
-	uintptr(0), 0, 0)
-	if errno  == 0{
-		return int(r1), nil
+	uintptr(unsafe.Pointer(&data)), 
+	0,0)
+	if errno  == 0 {
+		return data, nil
 	}
-	return 0, err
+	return 0, errno
+}
+
+func (tdb *ThreadDebugger) Poke(addr int, data int) (error) {
+	ok, err := tdb.stateGuard(PSTOPPED)
+	if !ok {
+		if err != nil {
+			return err
+		}
+		myerr := DBGERR_STATE_NOT_SUPPORTED
+		return &myerr
+	}
+
+	_, _, errno := syscall.Syscall6(syscall.SYS_PTRACE, syscall.PTRACE_POKETEXT, 
+	uintptr(tdb.pid),
+	uintptr(addr),
+	uintptr(unsafe.Pointer(&data)), 
+	0,0)
+	if errno  == 0 {
+		return nil
+	}
+	return errno
 }
 
 func (tdb *ThreadDebugger) GetSigInfo() (error) {
